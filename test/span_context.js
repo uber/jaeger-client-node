@@ -60,6 +60,35 @@ describe ('SpanContext should', () => {
         assert.isNotOk(context.isDebug());
     });
 
+    describe ('should set sampled bit', () => {
+        it ('for unsampled span', () => {
+            let context = SpanContext.fromString('100:7f:0:0');
+            context.samplingDecision = 1;
+            assert.equal(context._flags, constants.SAMPLED_MASK);
+        });
+
+        it ('for debug span', () => {
+            let context = SpanContext.fromString('100:7f:0:2');
+            context.samplingDecision = 1;
+            assert.equal(context._flags, constants.SAMPLED_MASK | constants.DEBUG_MASK);
+        });
+    });
+
+    describe ('should unset sampled bit', () => {
+        it ('for unsampled span', () => {
+            let context = SpanContext.fromString('100:7f:0:1');
+            context.samplingDecision = 0;
+            assert.equal(context._flags, 0);
+        });
+
+        it ('for debug span', () => {
+            context = SpanContext.fromString('100:7f:0:3');
+            context.samplingDecision = 0;
+            assert.equal(context._flags, constants.DEBUG_MASK);
+        });
+    });
+
+
     it ('format strings properly with toString', () => {
         let ctx1 = SpanContext.withBinaryIds(Utils.encodeInt64(0x100), Utils.encodeInt64(0x7f), null, 1);
         assert.equal(ctx1.toString(), '100:7f:0:1');

@@ -161,6 +161,14 @@ export default class SpanContext {
         return !!((this._traceId || this._traceIdStr) && (this._spanId || this._spanIdStr));
     }
 
+    set samplingDecision(samplingDecision: boolean): void {
+        if (samplingDecision) {
+            this._flags |= constants.SAMPLED_MASK;
+        } else {
+            this._flags &= ~constants.SAMPLED_MASK;
+        }
+    }
+
     finalizeSampling(): void {
         this._samplingFinalized = true;
     }

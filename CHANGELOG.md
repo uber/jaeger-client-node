@@ -7,6 +7,7 @@ Changes by Version
 New features:
 
 - Save baggage in span logs (#129)
+- Add support for upsampling (#128)
 
 Bug fixes:
 

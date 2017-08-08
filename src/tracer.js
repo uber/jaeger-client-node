@@ -44,6 +44,7 @@ export default class Tracer {
     _injectors: any;
     _extractors: any;
     _metrics: any;
+    _upsampling: any;
 
     /**
      * @param {String} [serviceName] - name of the current service or application.
@@ -54,6 +55,7 @@ export default class Tracer {
      *        as process-level tags on the Tracer itself.
      * @param {Object} [options.metrics] - instance of the Metrics class from ./metrics/metrics.js.
      * @param {Object} [options.logger] - a logger matching NullLogger API from ./logger.js.
+     * @param {Object} [options.upsampling] - determines whether to resample child spans of unsampled parents.
      */
     constructor(serviceName: string,
             reporter: Reporter = new NoopReporter(),
@@ -72,6 +74,11 @@ export default class Tracer {
         this._logger = options.logger || new NullLogger();
         this._injectors = {};
         this._extractors = {};
+
+        this._upsampling = {
+            enabled: !!(options.upsampling && options.upsampling.enabled)
+        };
+
 
         let textCodec = new TextMapCodec({
             urlEncoding: false,
@@ -182,7 +189,7 @@ export default class Tracer {
         let userTags = options.tags || {};
         let startTime = options.startTime || this.now();
 
-        // This flag is used to ensure that CHILD_OF reference is preferred 
+        // This flag is used to ensure that CHILD_OF reference is preferred
         // as a parent even if it comes after FOLLOWS_FROM reference.
         let followsFromIsParent = false;
         let parent: ?SpanContext = options.childOf instanceof Span ? options.childOf.context() : options.childOf;
@@ -236,8 +243,13 @@ export default class Tracer {
             // reuse parent's baggage as we'll never change it
             ctx.baggage = parent.baggage;
 
-            parent.finalizeSampling();
-            ctx.finalizeSampling();
+            if (parent.isDebug() || parent.isSampled()) {
+                // The sampled and debug flag may never go from 1 -> 0
+                parent.finalizeSampling();
+                ctx.finalizeSampling();
+            } else if (rpcServer || !parent.parentId) { // Check for first in process span
+                this.handleUpsampling(parent, ctx, operationName, internalTags);
+            }
         }
 
         return this._startInternalSpan(
@@ -250,6 +262,28 @@ export default class Tracer {
             rpcServer,
             references
         );
+    }
+
+    /**
+     * Reapplies sampling and updates parent's sampling flag
+     *
+     * @param parent the parent span context
+     * @param ctx the span context
+     * @param operationName the operation name for the child
+     * @param tags tags to be applied by the sampler
+     */
+    handleUpsampling(parent: SpanContext, ctx: SpanContext, operationName: string, tags: any) {
+        if (!this._upsampling.enabled) {
+            return
+        }
+
+        let samplingDecision = this._sampler.isSampled(operationName, tags);
+
+        parent.samplingDecision = samplingDecision;
+        parent.finalizeSampling();
+
+        // We do not finalize ctx' sampling decision because it may be modified once by setOperationName
+        ctx.samplingDecision = samplingDecision;
     }
 
     /**
